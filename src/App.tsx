@@ -221,7 +221,7 @@ function App() {
           Upload syllabus files
           <input
             type="file"
-            accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+            accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt"
             multiple
             onChange={(event) => handleFiles(event.target.files)}
           />

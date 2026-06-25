@@ -19,11 +19,10 @@ const maxPastedTextChars = 200_000;
 const maxFileBytes = 8 * 1024 * 1024;
 const acceptedFileTypes = new Set([
   "application/pdf",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ]);
-const acceptedFileExtensions = [".pdf", ".doc", ".docx", ".txt"];
+const acceptedFileExtensions = [".pdf", ".docx", ".txt"];
 
 export const fallbackParsedSyllabus: ParsedSyllabusResponse = {
   courseTitle: "Respiratory Care Therapeutics and Diagnostics",
@@ -167,7 +166,7 @@ function validateParserInput(syllabusText: string, syllabusFile?: File | null) {
   const hasAcceptedType = acceptedFileTypes.has(syllabusFile.type);
 
   if (!hasAcceptedType && !hasAcceptedExtension) {
-    throw new Error("Unsupported file type. Upload PDF, DOC, DOCX, or TXT files only.");
+    throw new Error("Unsupported file type. Upload PDF, DOCX, or TXT files only.");
   }
 
   if (syllabusFile.size > maxFileBytes) {

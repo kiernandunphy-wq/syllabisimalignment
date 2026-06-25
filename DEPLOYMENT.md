@@ -2,18 +2,35 @@
 
 ## Local Development
 
-Run the backend and frontend separately.
+Create a local `.env` file from `.env.example` and set `GEMINI_API_KEY`.
 
 ```powershell
-$env:GEMINI_API_KEY="your_key_here"
-npm run api
+Copy-Item .env.example .env
 ```
 
+Then edit `.env` and replace `your_server_side_gemini_api_key`.
+
+Run the backend and frontend together:
+
 ```powershell
-npm run dev
+npm run dev:full
 ```
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:8787`.
+
+You can also run the backend and frontend separately:
+
+```powershell
+npm run api
+npm run dev
+```
+
+## Supported Upload Parsing
+
+- PDF files are sent to Gemini as inline documents.
+- DOCX files are converted to text on the backend before calling Gemini.
+- TXT files are converted to text on the backend before calling Gemini.
+- Legacy `.doc` files are not supported; save them as DOCX, PDF, or TXT first.
 
 ## Production Build
 

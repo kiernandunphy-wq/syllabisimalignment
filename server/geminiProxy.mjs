@@ -1,12 +1,16 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, readFileSync } from "node:fs";
+import { readFile as readFileAsync } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import mammoth from "mammoth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist");
+loadDotEnv(path.join(projectRoot, ".env"));
+
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
 const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
@@ -18,11 +22,10 @@ const rateLimitMaxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 20);
 const loggingEnabled = process.env.REQUEST_LOGGING_ENABLED !== "false";
 const acceptedFileTypes = new Set([
   "application/pdf",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ]);
-const acceptedFileExtensions = [".pdf", ".doc", ".docx", ".txt"];
+const acceptedFileExtensions = [".pdf", ".docx", ".txt"];
 const rateLimitBuckets = new Map();
 const bloomLevels = new Set(["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]);
 const exposureStatuses = new Set([
@@ -111,8 +114,19 @@ async function handleParseSyllabus(request, response) {
 
   logParseEvent("accepted", requestId, startedAt, requestMetadata(syllabusText, file));
 
-  const parts = [{ text: buildPrompt(syllabusText) }];
-  if (file) {
+  const fileText = file ? await extractTextFromSupportedFile(file) : "";
+  if (file && !shouldSendAsInlineDocument(file) && !fileText) {
+    logParseEvent("rejected", requestId, startedAt, {
+      ...requestMetadata(syllabusText, file),
+      reason: "empty_extracted_file_text",
+      statusCode: 400,
+    });
+    sendJson(response, 400, { error: "No readable text could be extracted from the uploaded file." });
+    return;
+  }
+
+  const parts = [];
+  if (file && shouldSendAsInlineDocument(file)) {
     parts.push({
       inlineData: {
         mimeType: file.mimeType,
@@ -120,6 +134,7 @@ async function handleParseSyllabus(request, response) {
       },
     });
   }
+  parts.push({ text: buildPrompt([syllabusText, fileText].filter(Boolean).join("\n\n")) });
 
   const geminiResponse = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -423,7 +438,7 @@ function validateParserInput(syllabusText, file) {
   const hasAcceptedType = acceptedFileTypes.has(file.mimeType);
 
   if (!hasAcceptedType && !hasAcceptedExtension) {
-    return "Unsupported file type. Upload PDF, DOC, DOCX, or TXT files only.";
+    return "Unsupported file type. Upload PDF, DOCX, or TXT files only.";
   }
 
   if (file.size > maxFileBytes || approximateBase64Bytes(file.data) > maxFileBytes) {
@@ -438,6 +453,38 @@ function approximateBase64Bytes(value) {
   return Math.floor((value.length * 3) / 4) - padding;
 }
 
+async function extractTextFromSupportedFile(file) {
+  if (isDocxFile(file)) {
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(file.data, "base64") });
+    return result.value.trim();
+  }
+
+  if (isTextFile(file)) {
+    return Buffer.from(file.data, "base64").toString("utf8").trim();
+  }
+
+  return "";
+}
+
+function shouldSendAsInlineDocument(file) {
+  return isPdfFile(file);
+}
+
+function isPdfFile(file) {
+  return file.mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function isDocxFile(file) {
+  return (
+    file.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.name.toLowerCase().endsWith(".docx")
+  );
+}
+
+function isTextFile(file) {
+  return file.mimeType === "text/plain" || file.name.toLowerCase().endsWith(".txt");
+}
+
 async function serveStatic(pathname, response) {
   const requested = pathname === "/" ? "/index.html" : pathname;
   const safePath = path.normalize(decodeURIComponent(requested));
@@ -449,13 +496,33 @@ async function serveStatic(pathname, response) {
   }
 
   try {
-    const content = await readFile(filePath);
+    const content = await readFileAsync(filePath);
     response.writeHead(200, { "Content-Type": contentType(filePath) });
     response.end(content);
   } catch {
-    const index = await readFile(path.join(distDir, "index.html"));
+    const index = await readFileAsync(path.join(distDir, "index.html"));
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end(index);
+  }
+}
+
+function loadDotEnv(filePath) {
+  try {
+    const envText = readFileSync(filePath, "utf8");
+    for (const line of envText.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex === -1) continue;
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const rawValue = trimmed.slice(separatorIndex + 1).trim();
+      const value = rawValue.replace(/^['"]|['"]$/g, "");
+      if (key && process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
+  } catch {
+    // Local .env is optional. Production should use deployment secrets.
   }
 }
 
