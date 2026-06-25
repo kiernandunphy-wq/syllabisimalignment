@@ -18,6 +18,64 @@ type LocalUploadedSyllabus = UploadedSyllabus & {
 };
 
 const programTerms: ProgramTerm[] = ["Term 1", "Term 2", "Term 3", "Term 4", "Term 5"];
+const programOverview: Record<
+  ProgramTerm,
+  {
+    phase: string;
+    courses: string;
+    cognitiveFocus: string[];
+    simDifficulty: string;
+    bloomLevel: string;
+    selectionDifficulty: string;
+    recommendedOptions: string;
+  }
+> = {
+  "Term 1": {
+    phase: "Foundation",
+    courses: "RCP100 / RCP110",
+    cognitiveFocus: ["Assessment basics", "Oxygen & meds", "Guided decisions"],
+    simDifficulty: "Basic",
+    bloomLevel: "Remember -> Apply",
+    selectionDifficulty: "Basic",
+    recommendedOptions: "Al K. Seltzer, George Jayson, Joe Blow, Flo Mieter, Mr. R.T. Fuller, Oxygen Rounds",
+  },
+  "Term 2": {
+    phase: "Structured Application",
+    courses: "RCP120 / RCP130 / RCP140",
+    cognitiveFocus: ["Pathophysiology links", "ABG/CXR/ECG intro", "Prioritization begins"],
+    simDifficulty: "Basic-Intermediate",
+    bloomLevel: "Apply -> Analyze",
+    selectionDifficulty: "Basic -> Intermediate",
+    recommendedOptions: "Inowana Newby, Will Williams, Hy Ball, Patty Mitrail, intermediate bridge cases",
+  },
+  "Term 3": {
+    phase: "Clinical Application",
+    courses: "RCP150",
+    cognitiveFocus: ["Mechanical ventilation", "ABG-driven decisions", "Alarm troubleshooting"],
+    simDifficulty: "Intermediate",
+    bloomLevel: "Analyze",
+    selectionDifficulty: "Intermediate",
+    recommendedOptions: "Intermediate ventilator and ABG-driven cases, with faculty-approved advanced bridge cases",
+  },
+  "Term 4": {
+    phase: "Integrated Critical Thinking",
+    courses: "RCP160 / RCP170",
+    cognitiveFocus: ["ICU integration", "Hemodynamics", "Neonatal/Peds adaptation"],
+    simDifficulty: "Advanced",
+    bloomLevel: "Analyze -> Evaluate",
+    selectionDifficulty: "Advanced",
+    recommendedOptions: "Baby Adams, Baby Baxter, Baby Collins, Baby Greene, advanced ICU/neonatal/pediatric cases",
+  },
+  "Term 5": {
+    phase: "NBRC-Level Reasoning",
+    courses: "RCP180 / RCP190",
+    cognitiveFocus: ["Diagnostics mastery", "CPG/TDP application", "Terminate/Modify/Continue decisions"],
+    simDifficulty: "NBRC-Level",
+    bloomLevel: "Evaluate",
+    selectionDifficulty: "NBRC-Level",
+    recommendedOptions: "Problem 14-22 advanced set, mixed CSE-style sequencing, end-of-program readiness cases",
+  },
+};
 
 function App() {
   const [syllabi, setSyllabi] = useState<LocalUploadedSyllabus[]>([]);
@@ -131,6 +189,19 @@ function App() {
     setMessage("Program curriculum map updated. Course codes were treated as metadata only.");
   }
 
+  function downloadFiveTermReport() {
+    const reportHtml = buildFiveTermReportHtml(programMap);
+    const blob = new Blob([reportHtml], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `classmatelr-five-term-report-${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -171,6 +242,9 @@ function App() {
           </button>
           <button type="button" onClick={handleAnalyzeAll} disabled={isAnalyzing}>
             {isAnalyzing ? "Analyzing..." : "Analyze All Syllabi"}
+          </button>
+          <button type="button" className="secondary" onClick={downloadFiveTermReport}>
+            Download 5-Term Report
           </button>
           <button type="button" className="secondary" onClick={() => setDebugOpen((open) => !open)}>
             {debugOpen ? "Hide Debug" : "Show Debug"}
@@ -441,6 +515,172 @@ function DebugBlock({ title, value }: { title: string; value: unknown }) {
       <pre>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>
     </div>
   );
+}
+
+function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
+  const generatedAt = new Date().toLocaleString();
+  const progressionRows = programTerms
+    .map((term) => {
+      const overview = programOverview[term];
+      return `
+        <tr class="${termClass(term)}">
+          <td><strong>${escapeHtml(term)}</strong><br />${escapeHtml(overview.phase)}</td>
+          <td>${escapeHtml(overview.courses).replace(/\s\/\s/g, "<br />")}</td>
+          <td>${overview.cognitiveFocus.map(escapeHtml).join("<br />")}</td>
+          <td>${escapeHtml(overview.simDifficulty)}</td>
+          <td>${escapeHtml(overview.bloomLevel)}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const matrixRows = programTerms
+    .map((term) => {
+      const overview = programOverview[term];
+      return `
+        <tr>
+          <td>${escapeHtml(term)}</td>
+          <td>${escapeHtml(overview.courses)}</td>
+          <td>${escapeHtml(overview.selectionDifficulty)}</td>
+          <td>${escapeHtml(overview.recommendedOptions)}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const detailSections = programMap
+    .map((termAlignment) => {
+      const syllabi = termAlignment.uploadedSyllabi
+        .map(
+          (syllabus) => `
+            <section class="syllabus">
+              <h3>${escapeHtml(syllabus.fileName)}</h3>
+              <p class="muted">${escapeHtml(syllabus.detectedCourseTitle || "Untitled course")}${
+                syllabus.detectedCourseCode ? ` (${escapeHtml(syllabus.detectedCourseCode)})` : ""
+              }</p>
+              ${syllabus.recommendations.map(reportRecommendationCard).join("")}
+            </section>`,
+        )
+        .join("");
+
+      return `
+        <section class="term-section">
+          <h2>${escapeHtml(termAlignment.term)}: ${escapeHtml(termAlignment.termLabel)}</h2>
+          ${syllabi || '<p class="muted">No syllabi assigned to this term.</p>'}
+        </section>`;
+    })
+    .join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ClassmateLR Five-Term SIM Alignment Report</title>
+  <style>
+    body { color: #172026; font-family: Arial, sans-serif; line-height: 1.35; margin: 32px; }
+    h1 { font-size: 30px; margin: 0 0 8px; text-align: center; }
+    h2 { border-bottom: 2px solid #0b168a; color: #0b168a; font-size: 20px; margin-top: 28px; padding-bottom: 5px; }
+    h3 { margin-bottom: 4px; }
+    h4 { margin: 16px 0 6px; }
+    table { border-collapse: collapse; margin: 16px 0 24px; width: 100%; }
+    th { background: #0b168a; color: white; font-weight: 700; text-align: center; }
+    th, td { border: 1px solid #858585; padding: 10px; vertical-align: middle; }
+    .term-1 { background: #f7f7f7; }
+    .term-2 { background: #d8d8d8; }
+    .term-3 { background: #dff0f8; }
+    .term-4 { background: #fff0d5; }
+    .term-5 { background: #f6ccd3; }
+    .lead { font-size: 15px; margin: 0 auto 18px; max-width: 920px; text-align: center; }
+    .disclaimer { background: #fff8df; border: 1px solid #e7d38b; margin: 18px 0; padding: 12px; }
+    .muted { color: #5d6b72; }
+    .recommendation { border: 1px solid #d8e0e5; margin: 12px 0; padding: 12px; }
+    .pick { border-left: 4px solid #12636f; margin: 10px 0; padding-left: 10px; }
+    .details { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); }
+    .details div { background: #f6f8f9; padding: 8px; }
+    ul { margin-top: 6px; }
+    @media print { body { margin: 0.5in; } .term-section { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <h1>Carrington Respiratory Therapy Program</h1>
+  <p class="lead">ClassmateLR Five-Term Syllabus-to-Simulation Alignment Report<br />Generated ${escapeHtml(generatedAt)}</p>
+  <div class="disclaimer"><strong>Faculty decision-support only.</strong> This report supports syllabus review and simulation alignment; it is not automatic curriculum approval.</div>
+
+  <h2>Term-by-Term Cognitive Progression Model</h2>
+  <table>
+    <thead>
+      <tr><th>Term</th><th>Courses</th><th>Cognitive Focus</th><th>SIM Difficulty</th><th>Bloom Level</th></tr>
+    </thead>
+    <tbody>${progressionRows}</tbody>
+  </table>
+  <p><strong>Program Outcome:</strong> Graduates demonstrate progressive cognitive development from foundational recall to NBRC-level evaluative decision-making. Simulation timing is intentionally sequenced to align with cognitive growth and board exam readiness.</p>
+
+  <h2>ClassmateLR SIM Selection Matrix</h2>
+  <table>
+    <thead>
+      <tr><th>Term</th><th>Course</th><th>Difficulty</th><th>Recommended SIM Options</th></tr>
+    </thead>
+    <tbody>${matrixRows}</tbody>
+  </table>
+
+  <h2>Parsed Syllabus Alignment Detail</h2>
+  ${detailSections}
+</body>
+</html>`;
+}
+
+function reportRecommendationCard(result: SimRecommendationResult): string {
+  const recommended = result.recommendedSims
+    .map(
+      (sim) => `
+        <div class="pick">
+          <strong>${escapeHtml(sim.name)} - ${escapeHtml(sim.difficulty)} - score ${sim.score}</strong>
+          <p>${escapeHtml(sim.rationale)}</p>
+          <p>${escapeHtml(sim.bloomAlignment)}</p>
+          <p>${escapeHtml(sim.readinessAlignment)}</p>
+          <p>${escapeHtml(sim.instructorUseNote)}</p>
+          ${sim.not100PercentAlignmentNote ? `<p>${escapeHtml(sim.not100PercentAlignmentNote)}</p>` : ""}
+          <h4>Debriefing Questions</h4>
+          <ul>
+            ${sim.debriefQuestions.allans3w.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}
+            <li>${escapeHtml(sim.debriefQuestions.therapyIndication)}</li>
+            <li>${escapeHtml(sim.debriefQuestions.therapyEffectiveness)}</li>
+            <li>${escapeHtml(sim.debriefQuestions.setupAccuracy)}</li>
+            <li>${escapeHtml(sim.debriefQuestions.evidenceRequired)}</li>
+            <li>${escapeHtml(sim.debriefQuestions.stopChangeEscalate)}</li>
+          </ul>
+        </div>`,
+    )
+    .join("");
+
+  return `
+    <article class="recommendation">
+      <h4>${escapeHtml(result.weekOrModule)}: ${escapeHtml(result.topic)}</h4>
+      <div class="details">
+        <div><strong>Term</strong><br />${escapeHtml(result.term)}</div>
+        <div><strong>Assigned tier</strong><br />${escapeHtml(result.assignedDifficultyTier)}</div>
+        <div><strong>Bloom level</strong><br />${escapeHtml(result.detectedBloomLevel)}</div>
+        <div><strong>Status</strong><br />${escapeHtml(result.alignmentStatus)}</div>
+      </div>
+      <p><strong>Alignment note:</strong> ${escapeHtml(result.alignmentNote)}</p>
+      <p><strong>Objectives:</strong></p>
+      <ul>${(result.learningObjectives.length ? result.learningObjectives : ["No objectives parsed."])
+        .map((objective) => `<li>${escapeHtml(objective)}</li>`)
+        .join("")}</ul>
+      <h4>Recommended Simulation and Debrief</h4>
+      ${recommended || `<p>${escapeHtml(result.alignmentNote)}</p>`}
+    </article>`;
+}
+
+function termClass(term: ProgramTerm): string {
+  return term.toLowerCase().replace(/\s+/g, "-");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 export default App;
