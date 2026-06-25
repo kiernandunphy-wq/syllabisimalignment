@@ -338,6 +338,8 @@ function App() {
                     title={syllabus.fileName}
                     value={{
                       rawParsedGeminiJson: syllabus.rawParsedJson ?? "No parse yet",
+                      parsingStatus: syllabus.parsingStatus,
+                      parseMessage: syllabus.parseMessage ?? "No parse message yet",
                       manuallyAssignedTerm: syllabus.assignedProgramTerm,
                       termRuleApplied: getTermRules(syllabus.assignedProgramTerm),
                       allowedDifficulties: getAllowedDifficulties(syllabus.assignedProgramTerm),
@@ -531,7 +533,7 @@ function DebugBlock({ title, value }: { title: string; value: unknown }) {
 }
 
 function inferProgramTerm(value: string): ProgramTerm {
-  const match = value.match(/\b(?:RT|RCP)\s*-?\s*(\d{3})\b/i);
+  const match = value.match(/\b(?:RT|RCP)\s*-?\s*(\d{3})(?!\d)/i);
   if (!match) {
     return "Term 1";
   }
