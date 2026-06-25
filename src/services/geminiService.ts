@@ -5,6 +5,9 @@ import type {
   TopicExposureStatus,
 } from "../types";
 import { fileToBase64 } from "../utils/text";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 const bloomLevels: BloomLevel[] = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 const exposureStatuses: TopicExposureStatus[] = [
@@ -118,15 +121,22 @@ export const fallbackParsedSyllabus: ParsedSyllabusResponse = {
 export async function parseSyllabusWithGemini(
   syllabusText: string,
   syllabusFile?: File | null,
-): Promise<{ parsed: ParsedSyllabusResponse; raw: unknown; usedFallback: boolean; error?: string }> {
+): Promise<{ parsed: ParsedSyllabusResponse; raw: unknown; usedFallback: boolean; error?: string; parseMessage?: string }> {
+  const isPdf = isPdfFile(syllabusFile);
+  let textForParsing = syllabusText;
+
+  if (isPdf && !textForParsing.trim()) {
+    textForParsing = await extractPdfTextLayer(syllabusFile);
+  }
+
   try {
-    validateParserInput(syllabusText, syllabusFile);
+    validateParserInput(textForParsing, syllabusFile);
 
     const response = await fetch("/api/parse-syllabus", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        syllabusText,
+        syllabusText: textForParsing,
         file: syllabusFile
           ? {
               name: syllabusFile.name,
@@ -145,21 +155,26 @@ export async function parseSyllabusWithGemini(
 
     const data = await response.json();
     const parsed = sanitizeParsedResponse(data.parsed);
-    return { parsed, raw: data.raw ?? data.parsed, usedFallback: false };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown Gemini parsing error";
     return {
-      parsed: {
-        courseTitle: undefined,
-        courseCode: undefined,
-        courseDescription: undefined,
-        learningObjectives: [],
-        modules: [],
-      },
-      raw: { error: message },
-      usedFallback: true,
-      error: message,
+      parsed,
+      raw: data.raw ?? data.parsed,
+      usedFallback: false,
+      parseMessage:
+        isPdf && textForParsing.trim()
+          ? "Parsed from PDF text extraction; faculty review recommended."
+          : "Parsed by Gemini.",
     };
+  } catch (error) {
+    const firstError = error instanceof Error ? error.message : "Unknown Gemini parsing error";
+
+    if (isPdf) {
+      const imageFallback = await parseRenderedPdfImages(syllabusFile);
+      if (imageFallback) {
+        return imageFallback;
+      }
+    }
+
+    return failedParse(firstError);
   }
 }
 
@@ -188,12 +203,15 @@ function validateParserInput(syllabusText: string, syllabusFile?: File | null) {
 function sanitizeParsedResponse(raw: unknown): ParsedSyllabusResponse {
   const value = raw as Partial<ParsedSyllabusResponse>;
   const modules = Array.isArray(value.modules) ? value.modules.map(sanitizeModule).filter(Boolean) : [];
+  if (!modules.length) {
+    throw new Error("Parsed data was insufficient: no modules could be extracted.");
+  }
   return {
     courseCode: stringOrUndefined(value.courseCode),
     courseTitle: stringOrUndefined(value.courseTitle),
     courseDescription: stringOrUndefined(value.courseDescription),
     learningObjectives: stringArray(value.learningObjectives),
-    modules: modules.length ? (modules as ParsedSyllabusModule[]) : fallbackParsedSyllabus.modules,
+    modules: modules as ParsedSyllabusModule[],
   };
 }
 
@@ -232,4 +250,152 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : [];
+}
+
+function isPdfFile(file?: File | null): file is File {
+  return Boolean(file && (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")));
+}
+
+async function extractPdfTextLayer(file: File): Promise<string> {
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+      pages.push(text);
+    }
+    const extractedText = pages.join("\n").trim();
+    return isMeaningfulSyllabusText(extractedText) ? extractedText : "";
+  } catch (error) {
+    console.warn("PDF text-layer extraction failed:", error);
+    return "";
+  }
+}
+
+async function parseRenderedPdfImages(
+  file: File,
+): Promise<{ parsed: ParsedSyllabusResponse; raw: unknown; usedFallback: boolean; error?: string; parseMessage?: string } | null> {
+  try {
+    const images = await renderPdfPages(file);
+    if (!images.length) {
+      return null;
+    }
+
+    const extractionResponse = await fetch("/api/extract-images", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images }),
+    });
+
+    if (!extractionResponse.ok) {
+      console.warn("PDF image extraction failed:", await extractionResponse.text());
+      return null;
+    }
+
+    const extractionData = await extractionResponse.json();
+    const extractedText = typeof extractionData.text === "string" ? extractionData.text : "";
+    if (!isMeaningfulSyllabusText(extractedText)) {
+      return null;
+    }
+
+    const parseResponse = await fetch("/api/parse-syllabus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        syllabusText: extractedText,
+        file: null,
+      }),
+    });
+
+    if (!parseResponse.ok) {
+      console.warn("Parsing extracted PDF image text failed:", await parseResponse.text());
+      return null;
+    }
+
+    const parseData = await parseResponse.json();
+    return {
+      parsed: sanitizeParsedResponse(parseData.parsed),
+      raw: parseData.raw ?? parseData.parsed,
+      usedFallback: false,
+      parseMessage: "Parsed from rendered PDF page images using Gemini vision; faculty review recommended.",
+    };
+  } catch (error) {
+    console.warn("Rendered PDF image fallback failed:", error);
+    return null;
+  }
+}
+
+async function renderPdfPages(file: File): Promise<string[]> {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const images: string[] = [];
+  const maxPages = Math.min(12, pdf.numPages);
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+    if (looksLikePolicyOnlyPage(pageText)) {
+      continue;
+    }
+
+    const viewport = page.getViewport({ scale: 1.35 });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) {
+      continue;
+    }
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvas, canvasContext: context, viewport }).promise;
+    images.push(canvas.toDataURL("image/jpeg", 0.76));
+  }
+
+  return images;
+}
+
+function isMeaningfulSyllabusText(value: string): boolean {
+  const normalized = value.toLowerCase();
+  const curriculumMarkers = [
+    "course",
+    "objective",
+    "outcome",
+    "schedule",
+    "week",
+    "module",
+    "topic",
+    "respiratory",
+    "ventilation",
+    "oxygen",
+    "airway",
+  ];
+  const markerCount = curriculumMarkers.filter((marker) => normalized.includes(marker)).length;
+  return value.trim().length >= 750 || markerCount >= 4;
+}
+
+function looksLikePolicyOnlyPage(value: string): boolean {
+  const normalized = value.toLowerCase();
+  const hasPolicyMarker = /title ix|academic integrity|student code|disability|accommodation|attendance policy/.test(
+    normalized,
+  );
+  const hasCurriculumMarker = /objective|outcome|schedule|week|module|topic|course outline|respiratory|ventilation/.test(
+    normalized,
+  );
+  return hasPolicyMarker && !hasCurriculumMarker;
+}
+
+function failedParse(message: string) {
+  return {
+    parsed: {
+      courseTitle: undefined,
+      courseCode: undefined,
+      courseDescription: undefined,
+      learningObjectives: [],
+      modules: [],
+    },
+    raw: { error: message },
+    usedFallback: true,
+    error: message,
+  };
 }

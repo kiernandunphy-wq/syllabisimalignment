@@ -200,7 +200,7 @@ function App() {
         ? response.error
           ? `Parsing failed: ${response.error}`
           : "Parsing failed."
-        : "Parsed by Gemini.",
+        : response.parseMessage ?? "Parsed by Gemini.",
     };
   }
 
