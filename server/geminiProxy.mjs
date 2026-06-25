@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist");
 const port = Number(process.env.PORT ?? 8787);
+const host = process.env.HOST ?? "0.0.0.0";
 const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 const maxPastedTextChars = Number(process.env.MAX_PASTED_TEXT_CHARS ?? 200_000);
 const maxFileBytes = Number(process.env.MAX_SYLLABUS_FILE_BYTES ?? 8 * 1024 * 1024);
@@ -67,8 +68,8 @@ createServer(async (request, response) => {
     logEvent("server_error", { error: message });
     sendJson(response, 500, { error: message });
   }
-}).listen(port, "127.0.0.1", () => {
-  console.log(`ClassmateLR server listening on http://127.0.0.1:${port}`);
+}).listen(port, host, () => {
+  console.log(`ClassmateLR server listening on http://${host}:${port}`);
 });
 
 async function handleParseSyllabus(request, response) {

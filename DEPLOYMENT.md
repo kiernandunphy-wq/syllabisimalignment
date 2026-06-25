@@ -50,3 +50,67 @@ The backend serves the built `dist` assets and the `/api/parse-syllabus` endpoin
 Gemini parses syllabi into structured JSON. The deterministic TypeScript rule engine assigns simulation recommendations. Do not replace the rule engine with model-generated recommendations without a separate review.
 
 Visible product disclaimer: faculty decision-support, not automatic curriculum approval.
+
+## Cloud Run Deployment
+
+Cloud Run containers must listen on `0.0.0.0` and the port provided by the `PORT` environment variable. The included `Dockerfile` builds the Vite frontend and runs the Node backend, which serves both `dist/` and `/api/parse-syllabus`.
+
+### One-Time Google Cloud Setup
+
+Install and sign in to the Google Cloud CLI:
+
+```powershell
+gcloud auth login
+gcloud auth application-default login
+```
+
+Set your project and region:
+
+```powershell
+gcloud config set project YOUR_PROJECT_ID
+gcloud config set run/region us-central1
+```
+
+Enable required services:
+
+```powershell
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com
+```
+
+Create the Gemini API key secret:
+
+```powershell
+echo YOUR_REAL_GEMINI_API_KEY | gcloud secrets create gemini-api-key --data-file=-
+```
+
+Grant Cloud Run access to the secret. Replace `PROJECT_NUMBER` with your project number:
+
+```powershell
+gcloud secrets add-iam-policy-binding gemini-api-key --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
+```
+
+You can find the project number with:
+
+```powershell
+gcloud projects describe YOUR_PROJECT_ID --format="value(projectNumber)"
+```
+
+### Deploy From Local Source
+
+From the repository root:
+
+```powershell
+gcloud run deploy syllabus-sim-alignment --source . --allow-unauthenticated --set-secrets GEMINI_API_KEY=gemini-api-key:latest --set-env-vars GEMINI_MODEL=gemini-2.5-flash,MAX_PASTED_TEXT_CHARS=200000,MAX_SYLLABUS_FILE_BYTES=8388608,RATE_LIMIT_WINDOW_MS=60000,RATE_LIMIT_MAX_REQUESTS=20,REQUEST_LOGGING_ENABLED=true
+```
+
+After deployment, Cloud Run prints a service URL. Open it and test with a small pasted syllabus first.
+
+### Update An Existing Secret
+
+If the key changes:
+
+```powershell
+echo NEW_REAL_GEMINI_API_KEY | gcloud secrets versions add gemini-api-key --data-file=-
+```
+
+Redeploy or wait for new instances to use the latest secret version.
