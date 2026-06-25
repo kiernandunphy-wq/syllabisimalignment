@@ -88,6 +88,9 @@ function App() {
     () => buildProgramTermAlignment(syllabi),
     [syllabi],
   );
+  const isReportReady =
+    syllabi.length > 0 &&
+    syllabi.every((syllabus) => syllabus.parsingStatus === "parsed" && syllabus.parsedModules.length > 0);
 
   function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -95,7 +98,7 @@ function App() {
       id: crypto.randomUUID(),
       fileName: file.name,
       file,
-      assignedProgramTerm: "Term 1",
+      assignedProgramTerm: inferProgramTerm(file.name),
       parsedModules: [],
       parsingStatus: "pending",
     }));
@@ -111,7 +114,7 @@ function App() {
         id: crypto.randomUUID(),
         fileName: `Pasted syllabus ${current.filter((item) => item.rawText).length + 1}`,
         rawText: pastedText,
-        assignedProgramTerm: "Term 1",
+        assignedProgramTerm: inferProgramTerm(pastedText),
         parsedModules: [],
         parsingStatus: "pending",
       },
@@ -190,6 +193,16 @@ function App() {
   }
 
   function downloadFiveTermReport() {
+    if (!syllabi.length && !pastedText.trim()) {
+      setMessage("Add and analyze syllabi before downloading the 5-term report.");
+      return;
+    }
+
+    if (!isReportReady) {
+      setMessage("Analyze all syllabi successfully before downloading the 5-term report.");
+      return;
+    }
+
     const reportHtml = buildFiveTermReportHtml(programMap);
     const blob = new Blob([reportHtml], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -515,6 +528,20 @@ function DebugBlock({ title, value }: { title: string; value: unknown }) {
       <pre>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>
     </div>
   );
+}
+
+function inferProgramTerm(value: string): ProgramTerm {
+  const match = value.match(/\b(?:RT|RCP)\s*-?\s*(\d{3})\b/i);
+  if (!match) {
+    return "Term 1";
+  }
+
+  const courseNumber = Number(match[1]);
+  if (courseNumber >= 380) return "Term 5";
+  if (courseNumber >= 330) return "Term 4";
+  if (courseNumber >= 300) return "Term 3";
+  if (courseNumber >= 240) return "Term 2";
+  return "Term 1";
 }
 
 function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
