@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mammoth from "mammoth";
+import { PDFParse } from "pdf-parse";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -126,7 +127,7 @@ async function handleParseSyllabus(request, response) {
   }
 
   const parts = [];
-  if (file && shouldSendAsInlineDocument(file)) {
+  if (file && shouldSendAsInlineDocument(file, fileText)) {
     parts.push({
       inlineData: {
         mimeType: file.mimeType,
@@ -454,20 +455,37 @@ function approximateBase64Bytes(value) {
 }
 
 async function extractTextFromSupportedFile(file) {
+  if (isPdfFile(file)) {
+    const parser = new PDFParse({ data: Buffer.from(file.data, "base64") });
+    try {
+      const result = await parser.getText();
+      return stripBoilerplate(result.text || "");
+    } catch (error) {
+      logEvent("pdf_text_extraction_failed", {
+        fileMimeType: file.mimeType,
+        fileSizeBytes: file.size,
+        error: error instanceof Error ? error.message : "Unknown PDF extraction error",
+      });
+      return "";
+    } finally {
+      await parser.destroy();
+    }
+  }
+
   if (isDocxFile(file)) {
     const result = await mammoth.extractRawText({ buffer: Buffer.from(file.data, "base64") });
-    return result.value.trim();
+    return stripBoilerplate(result.value || "");
   }
 
   if (isTextFile(file)) {
-    return Buffer.from(file.data, "base64").toString("utf8").trim();
+    return stripBoilerplate(Buffer.from(file.data, "base64").toString("utf8"));
   }
 
   return "";
 }
 
-function shouldSendAsInlineDocument(file) {
-  return isPdfFile(file);
+function shouldSendAsInlineDocument(file, extractedText) {
+  return isPdfFile(file) && !extractedText.trim();
 }
 
 function isPdfFile(file) {
@@ -483,6 +501,27 @@ function isDocxFile(file) {
 
 function isTextFile(file) {
   return file.mimeType === "text/plain" || file.name.toLowerCase().endsWith(".txt");
+}
+
+function stripBoilerplate(text) {
+  const normalized = text.replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").trim();
+  const boilerplateMarkers = [
+    "academic integrity",
+    "student code of conduct",
+    "title ix",
+    "disability",
+    "accommodations",
+    "attendance policy",
+    "campus resources",
+    "student services",
+  ];
+  const lower = normalized.toLowerCase();
+  const cutIndex = boilerplateMarkers
+    .map((marker) => lower.indexOf(marker))
+    .filter((index) => index > 1500)
+    .sort((a, b) => a - b)[0];
+
+  return (cutIndex ? normalized.slice(0, cutIndex) : normalized).trim();
 }
 
 async function serveStatic(pathname, response) {
