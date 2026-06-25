@@ -880,10 +880,11 @@ function buildFiveTermReportHtml(
   const progressionRows = programTerms
     .map((term) => {
       const overview = programOverview[term];
+      const courses = reportTermCourseList(term, syllabi);
       return `
         <tr class="${termClass(term)}">
           <td><strong>${escapeHtml(term)}</strong><br />${escapeHtml(overview.phase)}</td>
-          <td>${escapeHtml(overview.courseSequence)}</td>
+          <td>${courses.length ? courses.map(escapeHtml).join("<br />") : '<span class="muted">No uploaded courses assigned.</span>'}</td>
           <td>${overview.cognitiveFocus.map(escapeHtml).join("<br />")}</td>
           <td>${escapeHtml(overview.simDifficulty)}</td>
           <td>${escapeHtml(overview.bloomLevel)}</td>
@@ -892,21 +893,35 @@ function buildFiveTermReportHtml(
     .join("");
 
   const matrixRows = programTerms
-    .map((term) => {
+    .flatMap((term) => {
       const overview = programOverview[term];
-      return `
+      const termSyllabi = syllabi.filter((syllabus) => syllabus.assignedProgramTerm === term);
+      if (!termSyllabi.length) {
+        return [
+          `
         <tr>
           <td>${escapeHtml(term)}</td>
-          <td>${escapeHtml(overview.phase)}</td>
+          <td><span class="muted">No uploaded course assigned.</span></td>
           <td>${escapeHtml(overview.selectionDifficulty)}</td>
           <td>${escapeHtml(overview.recommendedOptions)}</td>
-        </tr>`;
+        </tr>`,
+        ];
+      }
+
+      return termSyllabi.map((syllabus) => `
+        <tr>
+          <td>${escapeHtml(term)}</td>
+          <td>${escapeHtml(reportSyllabusCourseLabel(syllabus))}</td>
+          <td>${escapeHtml(overview.selectionDifficulty)}</td>
+          <td>${escapeHtml(reportRecommendedSimOptions(syllabus, overview.recommendedOptions))}</td>
+        </tr>`);
     })
     .join("");
 
   const detailSections = programMap
     .map((termAlignment) => {
-      const syllabi = termAlignment.uploadedSyllabi
+      const termCourses = reportTermCourseList(termAlignment.term, syllabi);
+      const syllabusSections = termAlignment.uploadedSyllabi
         .map(
           (syllabus) => `
             <section class="syllabus">
@@ -923,7 +938,10 @@ function buildFiveTermReportHtml(
       return `
         <section class="term-section">
           <h2>${escapeHtml(termAlignment.term)}: ${escapeHtml(termAlignment.termLabel)}</h2>
-          ${syllabi || '<p class="muted">No syllabi assigned to this term.</p>'}
+          <p><strong>Courses:</strong> ${
+            termCourses.length ? termCourses.map(escapeHtml).join(" / ") : "No uploaded courses assigned."
+          }</p>
+          ${syllabusSections || '<p class="muted">No syllabi assigned to this term.</p>'}
         </section>`;
     })
     .join("");
@@ -997,7 +1015,7 @@ function buildFiveTermReportHtml(
   <h2>Term-by-Term Cognitive Progression Model</h2>
   <table>
     <thead>
-      <tr><th>Term</th><th>Course Sequence</th><th>Cognitive Focus</th><th>SIM Difficulty</th><th>Bloom Level</th></tr>
+      <tr><th>Term</th><th>Courses</th><th>Cognitive Focus</th><th>SIM Difficulty</th><th>Bloom Level</th></tr>
     </thead>
     <tbody>${progressionRows}</tbody>
   </table>
@@ -1006,7 +1024,7 @@ function buildFiveTermReportHtml(
   <h2>ClassmateLR SIM Selection Matrix</h2>
   <table>
     <thead>
-      <tr><th>Term</th><th>Phase</th><th>Difficulty</th><th>Recommended SIM Options</th></tr>
+      <tr><th>Term</th><th>Course</th><th>Difficulty</th><th>Recommended SIM Options</th></tr>
     </thead>
     <tbody>${matrixRows}</tbody>
   </table>
@@ -1016,6 +1034,38 @@ function buildFiveTermReportHtml(
   ${autoPrint ? "<script>window.addEventListener('load', () => window.print());</script>" : ""}
 </body>
 </html>`;
+}
+
+function reportTermCourseList(term: ProgramTerm, syllabi: UploadedSyllabus[]): string[] {
+  return syllabi
+    .filter((syllabus) => syllabus.assignedProgramTerm === term)
+    .map(reportSyllabusCourseLabel);
+}
+
+function reportSyllabusCourseLabel(syllabus: UploadedSyllabus): string {
+  const code = syllabus.detectedCourseCode || courseCodeFromFileName(syllabus.fileName);
+  const title = syllabus.detectedCourseTitle;
+  if (code && title) {
+    return `${code}: ${title}`;
+  }
+  return code || title || syllabus.fileName;
+}
+
+function courseCodeFromFileName(fileName: string): string {
+  const match = fileName.match(/\b(?:RT|RCP)\s*-?\s*(\d{3})(?!\d)/i);
+  return match ? `RT ${match[1]}` : "";
+}
+
+function reportRecommendedSimOptions(syllabus: UploadedSyllabus, defaultOptions: string): string {
+  if (syllabus.parsingStatus !== "parsed" || !syllabus.parsedModules.length) {
+    return "Faculty review required; parse failed before simulation selection.";
+  }
+
+  const recommendations = assignSims(syllabus.parsedModules, syllabus.assignedProgramTerm);
+  const simNames = uniqueReportStrings(
+    recommendations.flatMap((recommendation) => recommendation.recommendedSims.map((sim) => sim.name)),
+  ).slice(0, 8);
+  return simNames.length ? simNames.join(", ") : defaultOptions;
 }
 
 function reportRecommendationCard(result: SimRecommendationResult): string {
