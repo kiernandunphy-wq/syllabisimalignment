@@ -184,10 +184,8 @@ async function handleParseSyllabus(request, response) {
       [syllabusText, fileText].filter(Boolean).join("\n\n"),
       file?.name ?? "",
     );
-    if (
-      schemaError === "root.modules must be a non-empty array." &&
-      validateParsedSyllabusResponse(deterministicParsed) === ""
-    ) {
+    const deterministicSchemaError = validateParsedSyllabusResponse(deterministicParsed);
+    if (isEmptyModulesSchemaError(schemaError) && deterministicSchemaError === "") {
       logParseEvent("completed", requestId, startedAt, {
         statusCode: 200,
         moduleCount: deterministicParsed.modules.length,
@@ -208,6 +206,8 @@ async function handleParseSyllabus(request, response) {
     logParseEvent("schema_error", requestId, startedAt, {
       statusCode: 502,
       reason: schemaError,
+      deterministicFallbackReason: deterministicSchemaError || "not_attempted",
+      deterministicFallbackModuleCount: deterministicParsed.modules?.length ?? 0,
     });
     sendJson(response, 502, { error: "Gemini returned invalid syllabus JSON.", details: schemaError });
     return;
@@ -452,6 +452,10 @@ function buildDeterministicParsedSyllabus(text, fileName) {
     learningObjectives,
     modules,
   };
+}
+
+function isEmptyModulesSchemaError(schemaError) {
+  return /modules/i.test(schemaError) && /non-empty array|empty array|no modules/i.test(schemaError);
 }
 
 function normalizeExtractedText(text) {
