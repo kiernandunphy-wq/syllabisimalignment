@@ -69,6 +69,14 @@ export type ProgramTerm =
   | "Term 4"
   | "Term 5";
 
+export type TermAssignmentSource =
+  | "course_code"
+  | "filename"
+  | "content_inference"
+  | "manual_override";
+
+export type TermAssignmentConfidence = "high" | "medium" | "low";
+
 export type TermRule = {
   term: ProgramTerm;
   label: string;
@@ -142,6 +150,9 @@ export type UploadedSyllabus = {
   detectedCourseCode?: string;
   detectedCourseTitle?: string;
   assignedProgramTerm: ProgramTerm;
+  termAssignmentSource?: TermAssignmentSource;
+  termAssignmentConfidence?: TermAssignmentConfidence;
+  termAssignmentReason?: string;
   parsedModules: ParsedSyllabusModule[];
   parsingStatus: "pending" | "parsing" | "parsed" | "fallback" | "error";
   rawParsedJson?: unknown;

@@ -7,14 +7,24 @@ import {
 } from "./services/decisionEngine";
 import { parseSyllabusWithGemini } from "./services/geminiService";
 import type {
+  ParsedSyllabusResponse,
   ProgramTerm,
   ProgramTermAlignment,
   SimRecommendationResult,
+  TermAssignmentConfidence,
+  TermAssignmentSource,
   UploadedSyllabus,
 } from "./types";
 
 type LocalUploadedSyllabus = UploadedSyllabus & {
   file?: File;
+};
+
+type TermAssignment = {
+  term: ProgramTerm;
+  source: TermAssignmentSource;
+  confidence: TermAssignmentConfidence;
+  reason: string;
 };
 
 const programTerms: ProgramTerm[] = ["Term 1", "Term 2", "Term 3", "Term 4", "Term 5"];
@@ -95,39 +105,57 @@ function App() {
 
   function handleFiles(files: FileList | null) {
     if (!files?.length) return;
-    const newSyllabi: LocalUploadedSyllabus[] = Array.from(files).map((file) => ({
-      id: crypto.randomUUID(),
-      fileName: file.name,
-      file,
-      assignedProgramTerm: inferProgramTerm(file.name),
-      parsedModules: [],
-      parsingStatus: "pending",
-    }));
+    const newSyllabi: LocalUploadedSyllabus[] = Array.from(files).map((file) => {
+      const assignment = inferProgramTermFromCode(file.name, "filename") ?? contentTermAssignment(file.name);
+      return {
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        file,
+        assignedProgramTerm: assignment.term,
+        termAssignmentSource: assignment.source,
+        termAssignmentConfidence: assignment.confidence,
+        termAssignmentReason: assignment.reason,
+        parsedModules: [],
+        parsingStatus: "pending",
+      };
+    });
     setSyllabi((current) => [...current, ...newSyllabi]);
-    setMessage("Files added. Assign each syllabus to a program term, then analyze.");
+    setMessage("Files added. Program terms were auto-assigned and can be adjusted by faculty.");
   }
 
   function addPastedSyllabus() {
     if (!pastedText.trim()) return;
+    const assignment = inferProgramTermFromCode(pastedText, "content_inference") ?? contentTermAssignment(pastedText);
     setSyllabi((current) => [
       ...current,
       {
         id: crypto.randomUUID(),
         fileName: `Pasted syllabus ${current.filter((item) => item.rawText).length + 1}`,
         rawText: pastedText,
-        assignedProgramTerm: inferProgramTerm(pastedText),
+        assignedProgramTerm: assignment.term,
+        termAssignmentSource: assignment.source,
+        termAssignmentConfidence: assignment.confidence,
+        termAssignmentReason: assignment.reason,
         parsedModules: [],
         parsingStatus: "pending",
       },
     ]);
     setPastedText("");
-    setMessage("Pasted syllabus added. Assign it to a program term, then analyze.");
+    setMessage("Pasted syllabus added. Program term was auto-assigned and can be adjusted by faculty.");
   }
 
   function updateTerm(id: string, assignedProgramTerm: ProgramTerm) {
     setSyllabi((current) =>
       current.map((syllabus) =>
-        syllabus.id === id ? { ...syllabus, assignedProgramTerm } : syllabus,
+        syllabus.id === id
+          ? {
+              ...syllabus,
+              assignedProgramTerm,
+              termAssignmentSource: "manual_override",
+              termAssignmentConfidence: "high",
+              termAssignmentReason: "Faculty manually adjusted the program term.",
+            }
+          : syllabus,
       ),
     );
   }
@@ -144,10 +172,17 @@ function App() {
     );
 
     const response = await parseSyllabusWithGemini(target.rawText ?? "", target.file ?? null);
+    const assignment = response.usedFallback
+      ? currentTermAssignment(target)
+      : inferProgramTermFromParsedSyllabus(response.parsed, target.fileName);
     return {
       ...target,
       detectedCourseCode: response.parsed.courseCode,
       detectedCourseTitle: response.parsed.courseTitle,
+      assignedProgramTerm: assignment.term,
+      termAssignmentSource: assignment.source,
+      termAssignmentConfidence: assignment.confidence,
+      termAssignmentReason: assignment.reason,
       parsedModules: response.parsed.modules,
       rawParsedJson: response.raw,
       parsingStatus: response.usedFallback ? "error" : "parsed",
@@ -169,7 +204,16 @@ function App() {
                 id: crypto.randomUUID(),
                 fileName: "Pasted syllabus 1",
                 rawText: pastedText,
-                assignedProgramTerm: "Term 1" as ProgramTerm,
+                ...(() => {
+                  const assignment =
+                    inferProgramTermFromCode(pastedText, "content_inference") ?? contentTermAssignment(pastedText);
+                  return {
+                    assignedProgramTerm: assignment.term,
+                    termAssignmentSource: assignment.source,
+                    termAssignmentConfidence: assignment.confidence,
+                    termAssignmentReason: assignment.reason,
+                  };
+                })(),
                 parsedModules: [],
                 parsingStatus: "pending" as const,
               },
@@ -234,7 +278,11 @@ function App() {
 
       <section className="product-disclaimer" aria-label="Product disclaimer">
         <strong>Faculty decision-support only.</strong>
-        <span> This tool supports syllabus review and simulation alignment; it is not automatic curriculum approval.</span>
+        <span>
+          {" "}
+          This tool supports syllabus review and simulation alignment; it is not automatic curriculum approval. Program
+          terms are auto-assigned using ClassmateLR's five-term training philosophy and may be adjusted by faculty.
+        </span>
       </section>
 
       <section className="control-panel" aria-label="Syllabus controls">
@@ -314,6 +362,10 @@ function App() {
                   {syllabus.detectedCourseCode ? ` (${syllabus.detectedCourseCode})` : ""}
                 </p>
                 <small>Parsing status: {syllabus.parsingStatus}</small>
+                <small>
+                  Term assignment: {syllabus.termAssignmentSource ?? "content_inference"} /{" "}
+                  {syllabus.termAssignmentConfidence ?? "low"}
+                </small>
                 {syllabus.parseMessage && <small>{syllabus.parseMessage}</small>}
               </div>
               <label>
@@ -363,7 +415,10 @@ function App() {
                       rawParsedGeminiJson: syllabus.rawParsedJson ?? "No parse yet",
                       parsingStatus: syllabus.parsingStatus,
                       parseMessage: syllabus.parseMessage ?? "No parse message yet",
-                      manuallyAssignedTerm: syllabus.assignedProgramTerm,
+                      assignedProgramTerm: syllabus.assignedProgramTerm,
+                      termAssignmentSource: syllabus.termAssignmentSource ?? "unknown",
+                      termAssignmentConfidence: syllabus.termAssignmentConfidence ?? "unknown",
+                      termAssignmentReason: syllabus.termAssignmentReason ?? "No assignment reason recorded.",
                       termRuleApplied: getTermRules(syllabus.assignedProgramTerm),
                       allowedDifficulties: getAllowedDifficulties(syllabus.assignedProgramTerm),
                       rejectedSimsAndReasons: recommendations.map((result) => ({
@@ -555,18 +610,176 @@ function DebugBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function inferProgramTerm(value: string): ProgramTerm {
+function currentTermAssignment(syllabus: UploadedSyllabus): TermAssignment {
+  return {
+    term: syllabus.assignedProgramTerm,
+    source: syllabus.termAssignmentSource ?? "content_inference",
+    confidence: syllabus.termAssignmentConfidence ?? "low",
+    reason: syllabus.termAssignmentReason ?? "Previous program term assignment was retained.",
+  };
+}
+
+function inferProgramTermFromParsedSyllabus(parsed: ParsedSyllabusResponse, fileName: string): TermAssignment {
+  const parsedCodeAssignment = parsed.courseCode
+    ? inferProgramTermFromCode(parsed.courseCode, "course_code")
+    : undefined;
+  if (parsedCodeAssignment) {
+    return parsedCodeAssignment;
+  }
+
+  const filenameAssignment = inferProgramTermFromCode(fileName, "filename");
+  if (filenameAssignment) {
+    return filenameAssignment;
+  }
+
+  return contentTermAssignment(
+    [
+      fileName,
+      parsed.courseTitle,
+      parsed.courseCode,
+      parsed.courseDescription,
+      ...(parsed.learningObjectives ?? []),
+      ...parsed.modules.flatMap((module) => [
+        module.courseCode,
+        module.courseTitle,
+        module.weekOrModule,
+        module.topic,
+        module.detectedBloomLevel,
+        module.topicExposureStatus,
+        ...module.learningObjectives,
+        ...Object.values(module.clinicalFocus).flat(),
+      ]),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+  );
+}
+
+function inferProgramTermFromCode(value: string, source: Extract<TermAssignmentSource, "course_code" | "filename" | "content_inference">): TermAssignment | undefined {
   const match = value.match(/\b(?:RT|RCP)\s*-?\s*(\d{3})(?!\d)/i);
   if (!match) {
-    return "Term 1";
+    return undefined;
   }
 
   const courseNumber = Number(match[1]);
-  if (courseNumber >= 380) return "Term 5";
-  if (courseNumber >= 330) return "Term 4";
-  if (courseNumber >= 300) return "Term 3";
-  if (courseNumber >= 240) return "Term 2";
-  return "Term 1";
+  const term = courseNumber >= 380
+    ? "Term 5"
+    : courseNumber >= 330
+      ? "Term 4"
+      : courseNumber >= 300
+        ? "Term 3"
+        : courseNumber >= 240
+          ? "Term 2"
+          : "Term 1";
+
+  return {
+    term,
+    source,
+    confidence: "high",
+    reason: `Detected RT/RCP ${courseNumber} and mapped it to ${term} using the local program sequence.`,
+  };
+}
+
+function contentTermAssignment(value: string): TermAssignment {
+  const normalized = normalizeForTermAssignment(value);
+  const scores: Record<ProgramTerm, number> = {
+    "Term 1": keywordScore(normalized, [
+      "foundation",
+      "basic",
+      "introduction",
+      "introductory",
+      "assessment basics",
+      "vital signs",
+      "breath sounds",
+      "oxygen therapy",
+      "aerosol",
+      "medication",
+      "remember",
+      "understand",
+    ]),
+    "Term 2": keywordScore(normalized, [
+      "physical assessment",
+      "documentation",
+      "soap",
+      "sbar",
+      "bronchial hygiene",
+      "lung expansion",
+      "secretion",
+      "abg introduction",
+      "ecg introduction",
+      "chest imaging",
+      "care plan",
+      "apply",
+    ]),
+    "Term 3": keywordScore(normalized, [
+      "mechanical ventilation",
+      "ventilator",
+      "capnography",
+      "capnograph",
+      "oxygenation",
+      "ventilation",
+      "arterial blood gas",
+      "abg",
+      "troubleshooting",
+      "adult acute care",
+      "analyze",
+    ]),
+    "Term 4": keywordScore(normalized, [
+      "critical care",
+      "icu",
+      "hemodynamic",
+      "neonatal",
+      "pediatric",
+      "peds",
+      "high risk",
+      "multi system",
+      "advanced",
+      "evaluate",
+    ]),
+    "Term 5": keywordScore(normalized, [
+      "nbrc",
+      "credentialing",
+      "cse",
+      "tmc",
+      "review",
+      "board",
+      "exit",
+      "readiness",
+      "comprehensive",
+      "case management",
+      "mastery",
+      "evaluate",
+    ]),
+  };
+
+  const ranked = (Object.entries(scores) as Array<[ProgramTerm, number]>).sort((left, right) => right[1] - left[1]);
+  const [bestTerm, bestScore] = ranked[0];
+  const [, nextScore] = ranked[1];
+  const confidence: TermAssignmentConfidence = bestScore >= 6 && bestScore - nextScore >= 3
+    ? "high"
+    : bestScore >= 3
+      ? "medium"
+      : "low";
+
+  return {
+    term: bestScore > 0 ? bestTerm : "Term 1",
+    source: "content_inference",
+    confidence,
+    reason: bestScore > 0
+      ? `Matched syllabus content to ${bestTerm} using ClassmateLR five-term philosophy keywords.`
+      : "No clear course code or content pattern was detected; Term 1 was selected for faculty review.",
+  };
+}
+
+function keywordScore(normalizedText: string, keywords: string[]): number {
+  return keywords.reduce((score, keyword) => {
+    const normalizedKeyword = normalizeForTermAssignment(keyword);
+    return normalizedText.includes(normalizedKeyword) ? score + 1 : score;
+  }, 0);
+}
+
+function normalizeForTermAssignment(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
