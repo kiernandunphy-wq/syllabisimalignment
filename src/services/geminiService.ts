@@ -148,7 +148,18 @@ export async function parseSyllabusWithGemini(
     return { parsed, raw: data.raw ?? data.parsed, usedFallback: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Gemini parsing error";
-    return { parsed: fallbackParsedSyllabus, raw: fallbackParsedSyllabus, usedFallback: true, error: message };
+    return {
+      parsed: {
+        courseTitle: undefined,
+        courseCode: undefined,
+        courseDescription: undefined,
+        learningObjectives: [],
+        modules: [],
+      },
+      raw: { error: message },
+      usedFallback: true,
+      error: message,
+    };
   }
 }
 

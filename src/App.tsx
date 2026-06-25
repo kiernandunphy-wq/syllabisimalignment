@@ -81,6 +81,7 @@ function App() {
   const [syllabi, setSyllabi] = useState<LocalUploadedSyllabus[]>([]);
   const [pastedText, setPastedText] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState({ completed: 0, total: 0 });
   const [debugOpen, setDebugOpen] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -149,11 +150,11 @@ function App() {
       detectedCourseTitle: response.parsed.courseTitle,
       parsedModules: response.parsed.modules,
       rawParsedJson: response.raw,
-      parsingStatus: response.usedFallback ? "fallback" : "parsed",
+      parsingStatus: response.usedFallback ? "error" : "parsed",
       parseMessage: response.usedFallback
         ? response.error
-          ? `Fallback used: ${response.error}`
-          : "Fallback used because no Gemini API key is configured."
+          ? `Parsing failed: ${response.error}`
+          : "Parsing failed."
         : "Parsed by Gemini.",
     };
   }
@@ -181,15 +182,22 @@ function App() {
     }
 
     setIsAnalyzing(true);
+    setAnalysisProgress({ completed: 0, total: pendingSyllabi.length });
     setMessage("Analyzing syllabi one at a time...");
     const analyzed: LocalUploadedSyllabus[] = [];
     for (const syllabus of pendingSyllabi) {
       analyzed.push(await analyzeSyllabus(syllabus));
+      setAnalysisProgress({ completed: analyzed.length, total: pendingSyllabi.length });
     }
     setSyllabi(analyzed);
     setPastedText("");
     setIsAnalyzing(false);
-    setMessage("Program curriculum map updated. Course codes were treated as metadata only.");
+    const failedCount = analyzed.filter((syllabus) => syllabus.parsingStatus !== "parsed").length;
+    setMessage(
+      failedCount
+        ? `${failedCount} syllabus file(s) could not be parsed. Open Debug for details.`
+        : "Program curriculum map updated. Course codes were treated as metadata only.",
+    );
   }
 
   function downloadFiveTermReport() {
@@ -256,13 +264,28 @@ function App() {
           <button type="button" onClick={handleAnalyzeAll} disabled={isAnalyzing}>
             {isAnalyzing ? "Analyzing..." : "Analyze All Syllabi"}
           </button>
-          <button type="button" className="secondary" onClick={downloadFiveTermReport}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={downloadFiveTermReport}
+            disabled={isAnalyzing || !isReportReady}
+            title={
+              isReportReady
+                ? "Download 5-term report"
+                : "Analyze every syllabus successfully before downloading the report"
+            }
+          >
             Download 5-Term Report
           </button>
           <button type="button" className="secondary" onClick={() => setDebugOpen((open) => !open)}>
             {debugOpen ? "Hide Debug" : "Show Debug"}
           </button>
         </div>
+        {isAnalyzing && analysisProgress.total > 0 && (
+          <progress value={analysisProgress.completed} max={analysisProgress.total}>
+            {analysisProgress.completed} of {analysisProgress.total}
+          </progress>
+        )}
         {message && <p className="status-message">{message}</p>}
       </section>
 

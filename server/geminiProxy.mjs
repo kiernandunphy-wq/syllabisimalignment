@@ -116,7 +116,7 @@ async function handleParseSyllabus(request, response) {
   logParseEvent("accepted", requestId, startedAt, requestMetadata(syllabusText, file));
 
   const fileText = file ? await extractTextFromSupportedFile(file) : "";
-  if (file && !shouldSendAsInlineDocument(file) && !fileText) {
+  if (file && !shouldSendAsInlineDocument(file, fileText) && !fileText) {
     logParseEvent("rejected", requestId, startedAt, {
       ...requestMetadata(syllabusText, file),
       reason: "empty_extracted_file_text",
@@ -485,7 +485,7 @@ async function extractTextFromSupportedFile(file) {
 }
 
 function shouldSendAsInlineDocument(file, extractedText) {
-  return isPdfFile(file) && !extractedText.trim();
+  return isPdfFile(file) && !(extractedText || "").trim();
 }
 
 function isPdfFile(file) {
