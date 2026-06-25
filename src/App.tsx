@@ -910,11 +910,12 @@ function buildFiveTermReportHtml(
         .map(
           (syllabus) => `
             <section class="syllabus">
-              <h3>${escapeHtml(syllabus.fileName)}</h3>
+              <h3>${escapeHtml(syllabus.detectedCourseCode || syllabus.fileName)}: Detailed Curriculum Breakdown</h3>
               <p class="muted">${escapeHtml(syllabus.detectedCourseTitle || "Untitled course")}${
                 syllabus.detectedCourseCode ? ` (${escapeHtml(syllabus.detectedCourseCode)})` : ""
               }</p>
               ${syllabus.recommendations.map(reportRecommendationCard).join("")}
+              ${reportCourseSummary(syllabus.recommendations)}
             </section>`,
         )
         .join("");
@@ -955,6 +956,10 @@ function buildFiveTermReportHtml(
     .pick { border-left: 4px solid #12636f; margin: 10px 0; padding-left: 10px; }
     .details { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); }
     .details div { background: #f6f8f9; padding: 8px; }
+    .sim-table th:first-child, .sim-table td:first-child { width: 26%; }
+    .sim-table th:nth-child(2), .sim-table td:nth-child(2) { width: 14%; }
+    .notes { background: #f8fafb; border-left: 4px solid #0b168a; margin: 10px 0; padding: 10px; }
+    .summary { background: #f6f8f9; border: 1px solid #d8e0e5; margin: 14px 0 22px; padding: 12px; }
     ul { margin-top: 6px; }
     @media print { body { margin: 0.5in; } .term-section { break-inside: avoid; } }
   </style>
@@ -1014,46 +1019,100 @@ function buildFiveTermReportHtml(
 }
 
 function reportRecommendationCard(result: SimRecommendationResult): string {
-  const recommended = result.recommendedSims
+  const recommendationRows = result.recommendedSims
     .map(
       (sim) => `
-        <div class="pick">
-          <strong>${escapeHtml(sim.name)} - ${escapeHtml(sim.difficulty)} - score ${sim.score}</strong>
-          <p>${escapeHtml(sim.rationale)}</p>
-          <p>${escapeHtml(sim.bloomAlignment)}</p>
-          <p>${escapeHtml(sim.readinessAlignment)}</p>
-          <p>${escapeHtml(sim.instructorUseNote)}</p>
-          ${sim.not100PercentAlignmentNote ? `<p>${escapeHtml(sim.not100PercentAlignmentNote)}</p>` : ""}
-          <h4>Debriefing Questions</h4>
-          <ul>
+        <tr>
+          <td><strong>${escapeHtml(sim.name)}</strong><br /><span class="muted">Score ${sim.score}</span></td>
+          <td>${escapeHtml(sim.difficulty)}</td>
+          <td>
+            <ul>
             ${sim.debriefQuestions.allans3w.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}
             <li>${escapeHtml(sim.debriefQuestions.therapyIndication)}</li>
             <li>${escapeHtml(sim.debriefQuestions.therapyEffectiveness)}</li>
             <li>${escapeHtml(sim.debriefQuestions.setupAccuracy)}</li>
             <li>${escapeHtml(sim.debriefQuestions.evidenceRequired)}</li>
             <li>${escapeHtml(sim.debriefQuestions.stopChangeEscalate)}</li>
-          </ul>
-        </div>`,
+            </ul>
+          </td>
+        </tr>`,
+    )
+    .join("");
+
+  const rationale = result.recommendedSims
+    .map(
+      (sim) => `
+        <p><strong>${escapeHtml(sim.name)}:</strong> ${escapeHtml(sim.rationale)} ${escapeHtml(
+          sim.bloomAlignment,
+        )} ${escapeHtml(sim.readinessAlignment)} ${escapeHtml(sim.instructorUseNote)}${
+          sim.not100PercentAlignmentNote ? ` ${escapeHtml(sim.not100PercentAlignmentNote)}` : ""
+        }</p>`,
     )
     .join("");
 
   return `
     <article class="recommendation">
       <h4>${escapeHtml(result.weekOrModule)}: ${escapeHtml(result.topic)}</h4>
-      <div class="details">
-        <div><strong>Term</strong><br />${escapeHtml(result.term)}</div>
-        <div><strong>Assigned tier</strong><br />${escapeHtml(result.assignedDifficultyTier)}</div>
-        <div><strong>Bloom level</strong><br />${escapeHtml(result.detectedBloomLevel)}</div>
-        <div><strong>Status</strong><br />${escapeHtml(result.alignmentStatus)}</div>
-      </div>
-      <p><strong>Alignment note:</strong> ${escapeHtml(result.alignmentNote)}</p>
       <p><strong>Objectives:</strong></p>
       <ul>${(result.learningObjectives.length ? result.learningObjectives : ["No objectives parsed."])
         .map((objective) => `<li>${escapeHtml(objective)}</li>`)
         .join("")}</ul>
-      <h4>Recommended Simulation and Debrief</h4>
-      ${recommended || `<p>${escapeHtml(result.alignmentNote)}</p>`}
+      ${
+        recommendationRows
+          ? `<table class="sim-table">
+              <thead><tr><th>Simulation Name</th><th>Difficulty</th><th>Debriefing Questions</th></tr></thead>
+              <tbody>${recommendationRows}</tbody>
+            </table>
+            <p><strong>Rationale:</strong></p>
+            ${rationale}`
+          : `<p><strong>Recommended Simulation:</strong> ${escapeHtml(result.alignmentNote)}</p>`
+      }
+      <div class="notes">
+        <strong>Alignment Exceptions & Notes:</strong>
+        <ul>
+          <li>[Module Alignment Note] ${escapeHtml(result.alignmentNote)}</li>
+          <li>[Term Rule] ${escapeHtml(result.term)} uses ${escapeHtml(result.assignedDifficultyTier)} sequencing.</li>
+          <li>[Bloom Alignment] Detected Bloom level: ${escapeHtml(result.detectedBloomLevel)}.</li>
+          <li>[Topic Exposure] ${escapeHtml(result.topicExposureStatus.replace(/_/g, " "))}.</li>
+        </ul>
+      </div>
     </article>`;
+}
+
+function reportCourseSummary(recommendations: SimRecommendationResult[]): string {
+  if (!recommendations.length) {
+    return "";
+  }
+
+  const simNames = uniqueReportStrings(
+    recommendations.flatMap((recommendation) => recommendation.recommendedSims.map((sim) => sim.name)),
+  );
+  const skillFocus = uniqueReportStrings(
+    recommendations.flatMap((recommendation) => recommendation.clinicalFocusSummary),
+  ).slice(0, 8);
+  const statuses = recommendations.reduce<Record<string, number>>((counts, recommendation) => {
+    counts[recommendation.alignmentStatus] = (counts[recommendation.alignmentStatus] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  return `
+    <section class="summary">
+      <h4>Course Implementation Summary</h4>
+      <p><strong>Total parsed modules:</strong> ${recommendations.length}</p>
+      <p><strong>Recommended simulations used:</strong> ${
+        simNames.length ? simNames.map(escapeHtml).join(", ") : "No strong simulation recommendations."
+      }</p>
+      <p><strong>Skill focus:</strong> ${
+        skillFocus.length ? skillFocus.map(escapeHtml).join(", ") : "Faculty review required."
+      }</p>
+      <p><strong>Alignment status mix:</strong> ${Object.entries(statuses)
+        .map(([status, count]) => `${escapeHtml(status)}: ${count}`)
+        .join("; ")}</p>
+    </section>`;
+}
+
+function uniqueReportStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function termClass(term: ProgramTerm): string {
