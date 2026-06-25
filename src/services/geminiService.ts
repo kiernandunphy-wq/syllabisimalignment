@@ -159,10 +159,7 @@ export async function parseSyllabusWithGemini(
       parsed,
       raw: data.raw ?? data.parsed,
       usedFallback: false,
-      parseMessage:
-        isPdf && textForParsing.trim()
-          ? "Parsed from PDF text extraction; faculty review recommended."
-          : "Parsed by Gemini.",
+      parseMessage: parseSuccessMessage(data.parserSource, isPdf, textForParsing),
     };
   } catch (error) {
     const firstError = error instanceof Error ? error.message : "Unknown Gemini parsing error";
@@ -213,6 +210,16 @@ function sanitizeParsedResponse(raw: unknown): ParsedSyllabusResponse {
     learningObjectives: stringArray(value.learningObjectives),
     modules: modules as ParsedSyllabusModule[],
   };
+}
+
+function parseSuccessMessage(parserSource: unknown, isPdf: boolean, textForParsing: string): string {
+  if (parserSource === "deterministic_text_fallback") {
+    return "Parsed from extracted syllabus text using deterministic course-content fallback; faculty review recommended.";
+  }
+
+  return isPdf && textForParsing.trim()
+    ? "Parsed from PDF text extraction; faculty review recommended."
+    : "Parsed by Gemini.";
 }
 
 function sanitizeModule(raw: unknown): ParsedSyllabusModule {
