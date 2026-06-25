@@ -99,9 +99,19 @@ function App() {
     () => buildProgramTermAlignment(syllabi),
     [syllabi],
   );
-  const isReportReady =
-    syllabi.length > 0 &&
-    syllabi.every((syllabus) => syllabus.parsingStatus === "parsed" && syllabus.parsedModules.length > 0);
+  const reportStatus = useMemo(() => {
+    const parsedCount = syllabi.filter(
+      (syllabus) => syllabus.parsingStatus === "parsed" && syllabus.parsedModules.length > 0,
+    ).length;
+    return {
+      total: syllabi.length,
+      parsedCount,
+      failedCount: syllabi.filter((syllabus) => syllabus.parsingStatus === "error").length,
+      pendingCount: syllabi.filter((syllabus) => syllabus.parsingStatus === "pending").length,
+      isComplete: syllabi.length > 0 && parsedCount === syllabi.length,
+    };
+  }, [syllabi]);
+  const canDownloadReport = syllabi.length > 0 && !isAnalyzing;
 
   function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -250,12 +260,7 @@ function App() {
       return;
     }
 
-    if (!isReportReady) {
-      setMessage("Analyze all syllabi successfully before downloading the 5-term report.");
-      return;
-    }
-
-    const reportHtml = buildFiveTermReportHtml(programMap);
+    const reportHtml = buildFiveTermReportHtml(programMap, syllabi);
     const blob = new Blob([reportHtml], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -265,6 +270,29 @@ function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    setMessage(
+      reportStatus.isComplete
+        ? "Complete 5-term report downloaded."
+        : "Draft report downloaded with unparsed syllabus items marked for faculty review.",
+    );
+  }
+
+  function printFiveTermReport() {
+    if (!canDownloadReport) {
+      setMessage("Add syllabi before opening the printable report.");
+      return;
+    }
+
+    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!reportWindow) {
+      setMessage("Pop-up blocking prevented the printable report from opening. Use Download Report instead.");
+      return;
+    }
+
+    reportWindow.document.open();
+    reportWindow.document.write(buildFiveTermReportHtml(programMap, syllabi, true));
+    reportWindow.document.close();
+    reportWindow.focus();
   }
 
   return (
@@ -316,14 +344,17 @@ function App() {
             type="button"
             className="secondary"
             onClick={downloadFiveTermReport}
-            disabled={isAnalyzing || !isReportReady}
+            disabled={!canDownloadReport}
             title={
-              isReportReady
-                ? "Download 5-term report"
-                : "Analyze every syllabus successfully before downloading the report"
+              canDownloadReport
+                ? "Download complete or draft 5-term report"
+                : "Add syllabi before downloading the report"
             }
           >
-            Download 5-Term Report
+            Download Report (HTML)
+          </button>
+          <button type="button" className="secondary" onClick={printFiveTermReport} disabled={!canDownloadReport}>
+            Print / Save PDF
           </button>
           <button type="button" className="secondary" onClick={() => setDebugOpen((open) => !open)}>
             {debugOpen ? "Hide Debug" : "Show Debug"}
@@ -335,6 +366,13 @@ function App() {
           </progress>
         )}
         {message && <p className="status-message">{message}</p>}
+        {syllabi.length > 0 && (
+          <p className="status-message">
+            Report status: {reportStatus.parsedCount} of {reportStatus.total} parsed
+            {reportStatus.failedCount ? `, ${reportStatus.failedCount} failed` : ""}
+            {reportStatus.pendingCount ? `, ${reportStatus.pendingCount} pending` : ""}.
+          </p>
+        )}
       </section>
 
       <section className="alignment-map" aria-label="Five-term alignment map">
@@ -782,8 +820,18 @@ function normalizeForTermAssignment(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
+function buildFiveTermReportHtml(
+  programMap: ProgramTermAlignment[],
+  syllabi: UploadedSyllabus[],
+  autoPrint = false,
+): string {
   const generatedAt = new Date().toLocaleString();
+  const parsedCount = syllabi.filter(
+    (syllabus) => syllabus.parsingStatus === "parsed" && syllabus.parsedModules.length > 0,
+  ).length;
+  const failedSyllabi = syllabi.filter((syllabus) => syllabus.parsingStatus === "error");
+  const pendingSyllabi = syllabi.filter((syllabus) => syllabus.parsingStatus === "pending");
+  const reportMode = parsedCount === syllabi.length ? "Complete" : "Draft";
   const progressionRows = programTerms
     .map((term) => {
       const overview = programOverview[term];
@@ -855,6 +903,8 @@ function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
     .term-5 { background: #f6ccd3; }
     .lead { font-size: 15px; margin: 0 auto 18px; max-width: 920px; text-align: center; }
     .disclaimer { background: #fff8df; border: 1px solid #e7d38b; margin: 18px 0; padding: 12px; }
+    .report-status { background: #eef7f8; border: 1px solid #b9d7dc; margin: 18px 0; padding: 12px; }
+    .warning { background: #fff3f0; border: 1px solid #e8b4a6; margin: 12px 0; padding: 10px; }
     .muted { color: #5d6b72; }
     .recommendation { border: 1px solid #d8e0e5; margin: 12px 0; padding: 12px; }
     .pick { border-left: 4px solid #12636f; margin: 10px 0; padding-left: 10px; }
@@ -866,8 +916,33 @@ function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
 </head>
 <body>
   <h1>Carrington Respiratory Therapy Program</h1>
-  <p class="lead">ClassmateLR Five-Term Syllabus-to-Simulation Alignment Report<br />Generated ${escapeHtml(generatedAt)}</p>
+  <p class="lead">ClassmateLR Five-Term Syllabus-to-Simulation Alignment Report<br />${escapeHtml(reportMode)} report generated ${escapeHtml(generatedAt)}</p>
   <div class="disclaimer"><strong>Faculty decision-support only.</strong> This report supports syllabus review and simulation alignment; it is not automatic curriculum approval.</div>
+  <div class="report-status">
+    <strong>Report status:</strong> ${parsedCount} of ${syllabi.length} syllabus file(s) parsed successfully.
+    ${
+      failedSyllabi.length || pendingSyllabi.length
+        ? " Items that did not parse are included as faculty-review placeholders and should not be treated as final curriculum alignment."
+        : " All uploaded syllabi were included in the alignment detail."
+    }
+  </div>
+  ${
+    failedSyllabi.length
+      ? `<div class="warning"><strong>Parsing failed:</strong><ul>${failedSyllabi
+          .map(
+            (syllabus) =>
+              `<li>${escapeHtml(syllabus.fileName)} - ${escapeHtml(syllabus.parseMessage || "No error message recorded.")}</li>`,
+          )
+          .join("")}</ul></div>`
+      : ""
+  }
+  ${
+    pendingSyllabi.length
+      ? `<div class="warning"><strong>Pending analysis:</strong><ul>${pendingSyllabi
+          .map((syllabus) => `<li>${escapeHtml(syllabus.fileName)}</li>`)
+          .join("")}</ul></div>`
+      : ""
+  }
 
   <h2>Term-by-Term Cognitive Progression Model</h2>
   <table>
@@ -888,6 +963,7 @@ function buildFiveTermReportHtml(programMap: ProgramTermAlignment[]): string {
 
   <h2>Parsed Syllabus Alignment Detail</h2>
   ${detailSections}
+  ${autoPrint ? "<script>window.addEventListener('load', () => window.print());</script>" : ""}
 </body>
 </html>`;
 }
