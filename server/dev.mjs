@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 const commands = [
   { name: "api", command: "npm", args: ["run", "api"] },
-  { name: "vite", command: "npm", args: ["run", "dev"] },
+  { name: "vite", command: "npm", args: ["run", "vite-dev", "--", ...process.argv.slice(2)] },
 ];
 
 const children = commands.map(({ name, command, args }) => {

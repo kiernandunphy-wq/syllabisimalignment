@@ -14,7 +14,7 @@ loadDotEnv(path.join(projectRoot, ".env"));
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
-const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const model = normalizeGeminiModel(process.env.GEMINI_MODEL);
 const maxPastedTextChars = Number(process.env.MAX_PASTED_TEXT_CHARS ?? 200_000);
 const maxFileBytes = Number(process.env.MAX_SYLLABUS_FILE_BYTES ?? 8 * 1024 * 1024);
 const maxBodyBytes = Math.ceil(maxFileBytes * 1.5) + maxPastedTextChars + 50_000;
@@ -74,6 +74,7 @@ createServer(async (request, response) => {
   }
 }).listen(port, host, () => {
   console.log(`ClassmateLR server listening on http://${host}:${port}`);
+  console.log(`ClassmateLR Gemini model: ${model}`);
 });
 
 async function handleParseSyllabus(request, response) {
@@ -236,6 +237,24 @@ function sleep(durationMs) {
   return new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
+}
+
+function normalizeGeminiModel(value) {
+  const requestedModel = typeof value === "string" ? value.trim() : "";
+  const allowedModels = new Set(["gemini-2.5-flash"]);
+
+  if (!requestedModel) {
+    return "gemini-2.5-flash";
+  }
+
+  if (allowedModels.has(requestedModel)) {
+    return requestedModel;
+  }
+
+  console.warn(
+    `Ignoring unsupported GEMINI_MODEL "${requestedModel}". This app is pinned to gemini-2.5-flash for consistent parsing.`,
+  );
+  return "gemini-2.5-flash";
 }
 
 function buildPrompt(syllabusText) {

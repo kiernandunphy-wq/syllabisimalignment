@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server/dev.mjs",
     "dev:full": "node server/dev.mjs",
+    "vite-dev": "vite",
+    "dev:vite": "vite",
     "api": "node server/geminiProxy.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
