@@ -137,20 +137,13 @@ async function handleParseSyllabus(request, response) {
   }
   parts.push({ text: buildPrompt([syllabusText, fileText].filter(Boolean).join("\n\n")) });
 
-  const geminiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-        },
-      }),
+  const geminiResponse = await fetchGeminiWithRetry(apiKey, {
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
     },
-  );
+  });
 
   if (!geminiResponse.ok) {
     const details = await geminiResponse.text();
@@ -180,6 +173,69 @@ async function handleParseSyllabus(request, response) {
     moduleCount: parsed.modules.length,
   });
   sendJson(response, 200, { parsed, raw: parsed });
+}
+
+async function fetchGeminiWithRetry(apiKey, payload) {
+  const maxAttempts = 5;
+  let lastResponse = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (!isRetryableGeminiStatus(response.status) || attempt === maxAttempts) {
+      return response;
+    }
+
+    lastResponse = response;
+    const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+    const backoffMs = retryAfterMs ?? jitteredBackoffMs(attempt);
+    logEvent("gemini_retry", {
+      attempt,
+      statusCode: response.status,
+      model,
+      retryAfterMs: backoffMs,
+    });
+    await sleep(backoffMs);
+  }
+
+  return lastResponse;
+}
+
+function isRetryableGeminiStatus(statusCode) {
+  return statusCode === 429 || statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504;
+}
+
+function parseRetryAfterMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+
+  const dateMs = Date.parse(value);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : null;
+}
+
+function jitteredBackoffMs(attempt) {
+  const baseMs = 1_000 * 2 ** (attempt - 1);
+  const jitterMs = Math.floor(Math.random() * 750);
+  return Math.min(15_000, baseMs + jitterMs);
+}
+
+function sleep(durationMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function buildPrompt(syllabusText) {
