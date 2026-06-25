@@ -1,0 +1,433 @@
+:root {
+  color: #172026;
+  background: #eef2f5;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 6px;
+  background: #12636f;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.7rem 1rem;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+button.secondary {
+  background: #dce5ea;
+  color: #172026;
+}
+
+.app-shell {
+  margin: 0 auto;
+  max-width: 1440px;
+  padding: 24px;
+}
+
+.app-header {
+  background: #182a31;
+  border-radius: 8px;
+  color: white;
+  padding: 24px;
+}
+
+.app-header h1 {
+  font-size: clamp(1.4rem, 2.4vw, 2.4rem);
+  letter-spacing: 0;
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+
+.app-header p {
+  color: #d5e4e8;
+  margin: 0;
+}
+
+.product-disclaimer {
+  background: #fff8df;
+  border: 1px solid #e7d38b;
+  border-radius: 8px;
+  color: #4f3d0a;
+  margin-top: 14px;
+  padding: 12px 14px;
+}
+
+.product-disclaimer strong {
+  color: #172026;
+}
+
+.control-panel {
+  align-items: end;
+  background: white;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  margin-top: 18px;
+  padding: 18px;
+}
+
+label {
+  color: #44535b;
+  display: grid;
+  font-size: 0.9rem;
+  font-weight: 700;
+  gap: 7px;
+}
+
+select,
+input,
+textarea {
+  border: 1px solid #b7c4ca;
+  border-radius: 6px;
+  color: #172026;
+  padding: 0.65rem;
+}
+
+textarea {
+  min-height: 170px;
+  resize: vertical;
+}
+
+.text-area-label {
+  grid-column: 1 / -1;
+}
+
+.file-input {
+  align-self: stretch;
+}
+
+.term-display {
+  align-self: stretch;
+  background: #f6f8f9;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.term-display span {
+  color: #12636f;
+  font-weight: 800;
+}
+
+.term-display small,
+.term-card small {
+  color: #5d6b72;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.status-message {
+  background: #fff8df;
+  border: 1px solid #e7d38b;
+  border-radius: 6px;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+}
+
+.alignment-map {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  margin-top: 18px;
+}
+
+.term-card {
+  background: white;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  min-height: 118px;
+  padding: 14px;
+}
+
+.term-card.active {
+  border-color: #12636f;
+  box-shadow: inset 0 0 0 2px #12636f;
+}
+
+.term-card span {
+  color: #12636f;
+  font-weight: 800;
+}
+
+.results-section,
+.debug-panel,
+.syllabus-list {
+  margin-top: 24px;
+}
+
+.results-section h2,
+.debug-panel h2 {
+  margin-bottom: 12px;
+}
+
+.term-results {
+  border-top: 1px solid #cfd8dd;
+  padding: 18px 0;
+}
+
+.term-results h3 {
+  margin: 0 0 12px;
+}
+
+.recommendation-card {
+  background: white;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.syllabus-row,
+.syllabus-results {
+  background: white;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 16px;
+}
+
+.syllabus-row {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.7fr) auto;
+}
+
+.syllabus-row h3,
+.syllabus-results h4 {
+  margin: 0 0 4px;
+}
+
+.syllabus-row p,
+.syllabus-results p {
+  margin: 0 0 6px;
+}
+
+.syllabus-row small,
+.syllabus-results small {
+  color: #5d6b72;
+  display: block;
+  margin-top: 4px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.syllabus-results-heading {
+  align-items: start;
+  border-bottom: 1px solid #d8e0e5;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.card-heading {
+  align-items: start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.card-heading h4 {
+  font-size: 1.1rem;
+  margin: 0 0 4px;
+}
+
+.card-heading p {
+  margin: 0;
+}
+
+.status {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.status.full {
+  background: #d9f0df;
+  color: #1c6630;
+}
+
+.status.partial {
+  background: #fff2c5;
+  color: #74560b;
+}
+
+.status.weak,
+.status.no-clean-match,
+.status.needs-human-review {
+  background: #f5d8d5;
+  color: #842f2a;
+}
+
+.details-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  margin: 16px 0;
+}
+
+.details-grid.one-line {
+  grid-template-columns: 1fr;
+}
+
+.details-grid div {
+  background: #f6f8f9;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+dt {
+  color: #5d6b72;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+dd {
+  margin: 4px 0 0;
+}
+
+.split {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+h5,
+h6 {
+  font-size: 0.95rem;
+  margin: 14px 0 8px;
+}
+
+ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+li {
+  margin: 6px 0;
+}
+
+.pick {
+  border-left: 4px solid #12636f;
+  margin-top: 8px;
+  padding-left: 12px;
+}
+
+.pick p {
+  margin: 6px 0;
+}
+
+.debrief {
+  background: #f6f8f9;
+  border-radius: 6px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.muted,
+.empty-state {
+  color: #66757c;
+}
+
+.debug-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.debug-block {
+  background: #172026;
+  border-radius: 8px;
+  color: #eef2f5;
+  min-width: 0;
+  padding: 14px;
+}
+
+.debug-block h3 {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+}
+
+pre {
+  background: #0f171b;
+  border-radius: 6px;
+  color: #d6f4ff;
+  margin: 0;
+  max-height: 380px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1000px) {
+  .control-panel,
+  .alignment-map,
+  .details-grid,
+  .debug-grid,
+  .split,
+  .syllabus-row {
+    grid-template-columns: 1fr;
+  }
+
+  .card-heading,
+  .syllabus-results-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  button {
+    width: 100%;
+  }
+}
