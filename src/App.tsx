@@ -32,7 +32,7 @@ const programOverview: Record<
   ProgramTerm,
   {
     phase: string;
-    courses: string;
+    courseSequence: string;
     cognitiveFocus: string[];
     simDifficulty: string;
     bloomLevel: string;
@@ -42,7 +42,7 @@ const programOverview: Record<
 > = {
   "Term 1": {
     phase: "Foundation",
-    courses: "RCP100 / RCP110",
+    courseSequence: "Program term 1 courses",
     cognitiveFocus: ["Assessment basics", "Oxygen & meds", "Guided decisions"],
     simDifficulty: "Basic",
     bloomLevel: "Remember -> Apply",
@@ -51,7 +51,7 @@ const programOverview: Record<
   },
   "Term 2": {
     phase: "Structured Application",
-    courses: "RCP120 / RCP130 / RCP140",
+    courseSequence: "Program term 2 courses",
     cognitiveFocus: ["Pathophysiology links", "ABG/CXR/ECG intro", "Prioritization begins"],
     simDifficulty: "Basic-Intermediate",
     bloomLevel: "Apply -> Analyze",
@@ -60,7 +60,7 @@ const programOverview: Record<
   },
   "Term 3": {
     phase: "Clinical Application",
-    courses: "RCP150",
+    courseSequence: "Program term 3 courses",
     cognitiveFocus: ["Mechanical ventilation", "ABG-driven decisions", "Alarm troubleshooting"],
     simDifficulty: "Intermediate",
     bloomLevel: "Analyze",
@@ -69,7 +69,7 @@ const programOverview: Record<
   },
   "Term 4": {
     phase: "Integrated Critical Thinking",
-    courses: "RCP160 / RCP170",
+    courseSequence: "Program term 4 courses",
     cognitiveFocus: ["ICU integration", "Hemodynamics", "Neonatal/Peds adaptation"],
     simDifficulty: "Advanced",
     bloomLevel: "Analyze -> Evaluate",
@@ -78,7 +78,7 @@ const programOverview: Record<
   },
   "Term 5": {
     phase: "NBRC-Level Reasoning",
-    courses: "RCP180 / RCP190",
+    courseSequence: "Program term 5 courses",
     cognitiveFocus: ["Diagnostics mastery", "CPG/TDP application", "Terminate/Modify/Continue decisions"],
     simDifficulty: "NBRC-Level",
     bloomLevel: "Evaluate",
@@ -820,12 +820,57 @@ function normalizeForTermAssignment(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function inferInstitutionName(syllabi: UploadedSyllabus[]): string {
+  const searchableText = syllabi
+    .flatMap((syllabus) => [
+      syllabus.fileName,
+      syllabus.detectedCourseTitle,
+      syllabus.detectedCourseCode,
+      syllabus.rawText,
+      ...syllabus.parsedModules.flatMap((module) => [
+        module.courseTitle,
+        module.courseCode,
+        module.topic,
+        ...module.learningObjectives,
+      ]),
+    ])
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  const knownInstitution = searchableText.match(/\b(Ohlone College)\b/i)?.[1];
+  if (knownInstitution) {
+    return titleCaseInstitution(knownInstitution);
+  }
+
+  const institutionPattern =
+    /\b([A-Z][A-Za-z&.'-]*(?:\s+[A-Z][A-Za-z&.'-]*){0,5}\s+(?:College|University|Institute|School))\b/;
+  const match = searchableText.match(institutionPattern);
+  if (match && !/classmatelr|carrington/i.test(match[1])) {
+    return match[1].trim();
+  }
+
+  return "Respiratory Therapy";
+}
+
+function titleCaseInstitution(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    .replace(/\bOf\b/g, "of")
+    .replace(/\bAnd\b/g, "and");
+}
+
 function buildFiveTermReportHtml(
   programMap: ProgramTermAlignment[],
   syllabi: UploadedSyllabus[],
   autoPrint = false,
 ): string {
   const generatedAt = new Date().toLocaleString();
+  const institutionName = inferInstitutionName(syllabi);
+  const reportTitle =
+    institutionName === "Respiratory Therapy"
+      ? "Respiratory Therapy Program"
+      : `${institutionName} Respiratory Therapy Program`;
   const parsedCount = syllabi.filter(
     (syllabus) => syllabus.parsingStatus === "parsed" && syllabus.parsedModules.length > 0,
   ).length;
@@ -838,7 +883,7 @@ function buildFiveTermReportHtml(
       return `
         <tr class="${termClass(term)}">
           <td><strong>${escapeHtml(term)}</strong><br />${escapeHtml(overview.phase)}</td>
-          <td>${escapeHtml(overview.courses).replace(/\s\/\s/g, "<br />")}</td>
+          <td>${escapeHtml(overview.courseSequence)}</td>
           <td>${overview.cognitiveFocus.map(escapeHtml).join("<br />")}</td>
           <td>${escapeHtml(overview.simDifficulty)}</td>
           <td>${escapeHtml(overview.bloomLevel)}</td>
@@ -852,7 +897,7 @@ function buildFiveTermReportHtml(
       return `
         <tr>
           <td>${escapeHtml(term)}</td>
-          <td>${escapeHtml(overview.courses)}</td>
+          <td>${escapeHtml(overview.phase)}</td>
           <td>${escapeHtml(overview.selectionDifficulty)}</td>
           <td>${escapeHtml(overview.recommendedOptions)}</td>
         </tr>`;
@@ -915,7 +960,7 @@ function buildFiveTermReportHtml(
   </style>
 </head>
 <body>
-  <h1>Carrington Respiratory Therapy Program</h1>
+  <h1>${escapeHtml(reportTitle)}</h1>
   <p class="lead">ClassmateLR Five-Term Syllabus-to-Simulation Alignment Report<br />${escapeHtml(reportMode)} report generated ${escapeHtml(generatedAt)}</p>
   <div class="disclaimer"><strong>Faculty decision-support only.</strong> This report supports syllabus review and simulation alignment; it is not automatic curriculum approval.</div>
   <div class="report-status">
@@ -947,7 +992,7 @@ function buildFiveTermReportHtml(
   <h2>Term-by-Term Cognitive Progression Model</h2>
   <table>
     <thead>
-      <tr><th>Term</th><th>Courses</th><th>Cognitive Focus</th><th>SIM Difficulty</th><th>Bloom Level</th></tr>
+      <tr><th>Term</th><th>Course Sequence</th><th>Cognitive Focus</th><th>SIM Difficulty</th><th>Bloom Level</th></tr>
     </thead>
     <tbody>${progressionRows}</tbody>
   </table>
@@ -956,7 +1001,7 @@ function buildFiveTermReportHtml(
   <h2>ClassmateLR SIM Selection Matrix</h2>
   <table>
     <thead>
-      <tr><th>Term</th><th>Course</th><th>Difficulty</th><th>Recommended SIM Options</th></tr>
+      <tr><th>Term</th><th>Phase</th><th>Difficulty</th><th>Recommended SIM Options</th></tr>
     </thead>
     <tbody>${matrixRows}</tbody>
   </table>
